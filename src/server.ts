@@ -40,7 +40,6 @@ server.post('/register', async (req, res) => {
             password: hashedPassword,
             role,
             cpf,
-            creditCard,
             phoneNumber
         }
     });
@@ -62,12 +61,70 @@ server.post('/login', async (req, res) => {
     res.json({ token });
 });
 
+server.post('/api/payment/cards', authenticateJWT, async (req, res) => {
+    const { userId, type, name, number, cvv, expiry } = req.body; 
+    const id = parseInt(userId)
+
+    if (!userId || !type || !name || !number || !cvv || !expiry) {
+      return res.status(400).json({ error: 'Todos os campos são obrigatórios' });
+    }
+  
+    try {
+      const card = await prisma.creditCards.create({
+        data: {
+          type,
+          name,
+          number,
+          cvv,
+          expiry,
+          userId: id
+        },
+      });
+  
+      return res.json(card);
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ error: 'Erro ao criar o cartão de crédito' });
+    }
+  });
+  
+// Vulnerabilidade BOLA: qualquer usuário autenticado pode acessar dados sensíveis de qualquer outro usuário
+  server.get('/api/payment/cards/:creditCardID', authenticateJWT, async (req, res) => {
+    const { creditCardID } = req.params;
+    const cardID = parseInt(creditCardID);
+ 
+    /** Correção
+    const jwtToken:any= req.headers.authorization;
+    const [, token] = jwtToken.split(" ");
+    const authenticatedUser:any = verify(token, secretKey);
+*/
+    const creditCard = await prisma.creditCards.findUnique({
+        where: { id: cardID },
+        
+    });
+
+    if (!creditCard) {
+        return res.status(404).send('Card Not Found');
+    }
+    /** Correção
+    if (creditCard.userId !== authenticatedUser.id) {
+        return res.status(403).json('Access Denied');
+    } */
+
+    
+    res.json(creditCard);
+});
+
+
 server.get('/user/:id', authenticateJWT, async (req, res) => {
     const {id} = req.params; 
     const userID = parseInt(id);
 
     const user = await prisma.user.findUnique({
-        where: { id: userID }
+        where: { id: userID },
+        include:{
+            creditCards: true,
+          }
     });
 
     if (!user) {
